@@ -1,0 +1,42 @@
+# MANTIS .gitignore
+
+# === Large Binary Files (download via setup.bat) ===
+server.exe
+*.gguf
+
+# === Generated Data ===
+data/knowledge_base.json
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# === Virtual Environments ===
+venv/
+.venv/
+ENV/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Logs ===
+*.log
+
+# === Manuals ===
+# Manuals/
