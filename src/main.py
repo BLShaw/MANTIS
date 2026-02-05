@@ -25,8 +25,8 @@ KOBOLD_MODEL_URL = "http://localhost:5001/api/v1/model"
 
 # Generation parameters
 GEN_PARAMS = {
-    "temperature": 0.1,
-    "max_length": 500,
+    "temperature": 0.05,
+    "max_length": 1000,
     "top_p": 0.9,
     "top_k": 40,
     "rep_pen": 1.1,
@@ -36,13 +36,10 @@ GEN_PARAMS = {
 TOP_K_CHUNKS = 3
 
 # System instruction for the LLM
-SYSTEM_PROMPT = """You are a military maintenance assistant. You MUST respond in English only.
-CRITICAL RULES:
-1. ONLY use information that is DIRECTLY stated in the Context below
-2. If the Context is about a DIFFERENT aircraft/topic than the question, say "The loaded manuals do not contain information about [topic]. The available context is about [what context covers]."
-3. If the Context does not contain the specific answer, say "I don't have information about that in the loaded manuals."
-4. NEVER make up, guess, or invent any technical procedures or specifications
-5. When answering, cite the source document name"""
+SYSTEM_PROMPT = """You are a military maintenance assistant.
+Answer ONLY using the Context below. Cite the source document.
+If the answer is NOT in the Context, say: "Not found in loaded manuals."
+NEVER invent or guess procedures."""
 
 
 # --- Stopwords for keyword filtering ---
@@ -223,6 +220,7 @@ def query_kobold(prompt: str) -> str:
             "\n\nThis section",
             "\n\nNote:",
             "<|im_end|>",
+            "Not found in loaded manuals.",  # Stop immediately on refusal
         ],
     }
 

@@ -38,5 +38,6 @@ desktop.ini
 # === Logs ===
 *.log
 
-# === Manuals ===
+# === Manuals/Docs ===
 # Manuals/
+docs/
