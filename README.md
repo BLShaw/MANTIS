@@ -36,7 +36,7 @@ python src/ingest.py
 # 3. Start LLM server (separate terminal) [Set threads accordingly to the CPU]
 .\server.exe --model qwen2.5-0.5b-instruct-q4_k_m.gguf --port 5001 --threads 4
 
-# 4. Launch CLI chat
+# 4. Launch CLI chat (in separate terminal)
 python src/main.py
 ```
 
@@ -101,11 +101,8 @@ MANTIS/
 ├── src/
 │   ├── ingest.py           # PDF → JSON indexer
 │   └── main.py             # CLI RAG interface
-├── docs/
-│   ├── instructions.md     # Detailed setup guide
-│   └── test_questions.md   # Evaluation queries
 ├── data/
-│   └── knowledge_base.json # Indexed chunks
+│   └── knowledge_base.json # Indexed chunks (generated)
 ├── Manuals/                # Source PDFs
 ├── server.exe              # KoboldCPP (No-AVX)
 ├── *.gguf                  # Quantized LLM

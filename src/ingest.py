@@ -12,8 +12,9 @@ import fitz  # PyMuPDF
 
 
 # --- Configuration ---
-MANUALS_FOLDER = "../Manuals"
-OUTPUT_FILE = "../data/knowledge_base.json"
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MANUALS_FOLDER = os.path.join(_SCRIPT_DIR, "..", "Manuals")
+OUTPUT_FILE = os.path.join(_SCRIPT_DIR, "..", "data", "knowledge_base.json")
 
 # Platform tags extracted from filenames
 PLATFORM_PATTERNS = {
@@ -117,6 +118,7 @@ def save_knowledge_base(kb: list, output_path: str) -> None:
     Save knowledge base to JSON file.
     Uses compact format to minimize disk usage.
     """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(kb, f, ensure_ascii=False, indent=2)
     print(f"[INFO] Saved {len(kb)} chunks to '{output_path}'")

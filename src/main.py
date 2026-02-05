@@ -6,6 +6,7 @@ Libraries: requests, json only.
 """
 
 import json
+import os
 import re
 import sys
 
@@ -17,14 +18,15 @@ except ImportError:
 
 
 # --- Configuration ---
-KNOWLEDGE_BASE_FILE = "../data/knowledge_base.json"
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+KNOWLEDGE_BASE_FILE = os.path.join(_SCRIPT_DIR, "..", "data", "knowledge_base.json")
 KOBOLD_API_URL = "http://localhost:5001/api/v1/generate"
 KOBOLD_MODEL_URL = "http://localhost:5001/api/v1/model"
 
 # Generation parameters
 GEN_PARAMS = {
     "temperature": 0.1,
-    "max_length": 150,
+    "max_length": 500,
     "top_p": 0.9,
     "top_k": 40,
     "rep_pen": 1.1,
@@ -273,7 +275,6 @@ def print_banner():
     print()
     print("=" * 60)
     print("  MANTIS: Field Manual RAG System")
-    print("  Bare-Metal Implementation for Legacy Hardware")
     print("=" * 60)
     print()
 
