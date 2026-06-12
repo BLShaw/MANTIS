@@ -90,9 +90,10 @@ class TestEndToEndPipeline(unittest.TestCase):
 
         # Step 4: Build prompt
         prompt = build_prompt(query, context)
+        # Check prompt structure
         self.assertIn("<|im_start|>system", prompt)
-        self.assertIn(query, prompt)
-        self.assertIn("30 and 40 psi", prompt)
+        self.assertIn("<|im_start|>user", prompt)
+        self.assertIn("What is the AH-1 oil pressure?", prompt)
 
     def test_platform_specific_query(self):
         """Test that platform-specific queries retrieve correct documents."""

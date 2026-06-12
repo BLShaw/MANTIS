@@ -9,6 +9,12 @@ import json
 import os
 import re
 import sys
+import subprocess
+import atexit
+import time
+import glob
+from audit_logger import log_interaction
+from security import load_encrypted_json
 
 try:
     import requests
@@ -57,20 +63,36 @@ STOPWORDS = {
     "them", "their", "if", "up", "out", "off", "over", "any",
 }
 
+# --- Synonyms ---
+SYNONYMS = {
+    "chopper": "helicopter",
+    "heli": "helicopter",
+    "bird": "helicopter",
+    "specs": "specifications",
+    "rpm": "revolutions",
+    "psi": "pressure",
+    "lbs": "pounds",
+    "temp": "temperature",
+    "max": "maximum",
+    "min": "minimum",
+    "batt": "battery",
+    "trans": "transmission",
+    "nav": "navigation"
+}
+
 
 def load_knowledge_base(filepath: str) -> list:
     """Load the JSON knowledge base into memory."""
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            kb = json.load(f)
-        print(f"[INFO] Loaded {len(kb)} chunks from '{filepath}'")
+        kb = load_encrypted_json(filepath)
+        if not kb:
+            print(f"[WARN] Knowledge base '{filepath}' is empty or not found!")
+            print("       Run 'python ingest.py' first to build it.")
+        else:
+            print(f"[INFO] Loaded {len(kb)} chunks from '{filepath}'")
         return kb
-    except FileNotFoundError:
-        print(f"[ERROR] Knowledge base '{filepath}' not found!")
-        print("        Run 'python ingest.py' first to build it.")
-        return []
-    except json.JSONDecodeError as e:
-        print(f"[ERROR] Invalid JSON in '{filepath}': {e}")
+    except Exception as e:
+        print(f"[ERROR] Failed to load '{filepath}': {e}")
         return []
 
 
@@ -84,26 +106,22 @@ def tokenize_query(query: str) -> list:
     """
     query_lower = query.lower()
     
-    # First, extract platform identifiers (e.g., ah-1, rc-12, uh-60)
     platform_tokens = re.findall(r"[a-z]{1,2}[\-_]?\d{1,2}", query_lower)
     
-    # Build a set of component parts to exclude (e.g., "oh", "58" from "oh-58")
     platform_parts = set()
     for pt in platform_tokens:
-        # Split on dash/underscore and add parts
         parts = re.findall(r"[a-z]+|\d+", pt)
         platform_parts.update(parts)
     
-    # Then extract regular alphanumeric tokens
     regular_tokens = re.findall(r"[a-z0-9]+", query_lower)
     
-    # Filter stopwords, short tokens, and platform component parts
     regular_tokens = [
         t for t in regular_tokens 
         if t not in STOPWORDS and len(t) > 1 and t not in platform_parts
     ]
     
-    # Combine, preserving order and removing duplicates
+    regular_tokens = [SYNONYMS.get(t, t) for t in regular_tokens]
+    
     seen = set()
     tokens = []
     for t in platform_tokens + regular_tokens:
@@ -136,20 +154,16 @@ def weighted_keyword_search(query: str, knowledge_base: list, top_k: int = 3) ->
         text_lower = chunk["text"].lower()
         score = 0
 
-        # Keyword frequency scoring with word boundary matching
         for token in query_tokens:
-            # Use word boundary regex to avoid substring matches
-            # e.g., "oil" should not match "boil" or "coil"
             pattern = r"\b" + re.escape(token) + r"\b"
             matches = re.findall(pattern, text_lower)
-            score += len(matches)
+            if matches:
+                score += 10.0 + (len(matches) * 0.1)
 
-        # Platform bonus: if query mentions a platform, strongly boost matching chunks
         platform = chunk.get("platform", "UNKNOWN")
         if platform != "UNKNOWN" and platform.lower() in query_lower:
             score += 10  # Strong boost for platform match
         elif platform != "UNKNOWN":
-            # Penalize chunks from wrong platforms when query specifies a platform
             for pt in ["ah-1", "rc-12", "uh-1", "oh-58", "c-12", "ch-47", "uh-60"]:
                 if pt in query_lower and pt not in platform.lower():
                     score -= 5  # Penalty for wrong platform
@@ -157,18 +171,15 @@ def weighted_keyword_search(query: str, knowledge_base: list, top_k: int = 3) ->
 
         # Exact phrase bonus (for multi-word queries)
         if len(query_tokens) >= 2:
-            phrase = " ".join(query_tokens[:3])  # First 3 tokens as phrase
+            phrase = " ".join(query_tokens[:3])
             if phrase in text_lower:
                 score += 5
 
-        # Only include chunks with meaningful relevance
-        if score >= 3:  # Minimum threshold to filter noise
+        if score >= 3:
             scored_chunks.append((score, chunk))
 
-    # Sort by score descending
     scored_chunks.sort(key=lambda x: x[0], reverse=True)
 
-    # Return top_k chunks (or empty if none meet threshold)
     return [chunk for _, chunk in scored_chunks[:top_k]]
 
 
@@ -181,14 +192,14 @@ def format_context(chunks: list) -> str:
     for i, chunk in enumerate(chunks, 1):
         source = chunk.get("source", "Unknown")
         page = chunk.get("page", "?")
-        text = chunk.get("text", "")[:800]  # Truncate to save tokens
+        text = chunk.get("text", "")
         context_parts.append(f"[Source {i}: {source}, Page {page}]\n{text}")
 
     return "\n\n".join(context_parts)
 
 
 def build_prompt(query: str, context: str) -> str:
-    """Build the full prompt for KoboldCPP using Qwen's ChatML format."""
+    """Build the full prompt for KoboldCPP using ChatML format (Qwen)."""
     prompt = f"""<|im_start|>system
 {SYSTEM_PROMPT}<|im_end|>
 <|im_start|>user
@@ -216,11 +227,8 @@ def query_kobold(prompt: str) -> str:
         "top_k": GEN_PARAMS["top_k"],
         "rep_pen": GEN_PARAMS["rep_pen"],
         "stop_sequence": [
-            "\n\nHowever",
-            "\n\nThis section",
-            "\n\nNote:",
             "<|im_end|>",
-            "Not found in loaded manuals.",  # Stop immediately on refusal
+            "<|endoftext|>",
         ],
     }
 
@@ -235,7 +243,11 @@ def query_kobold(prompt: str) -> str:
 
         # KoboldCPP response format
         if "results" in result and len(result["results"]) > 0:
-            return result["results"][0].get("text", "").strip()
+            text = result["results"][0].get("text", "").strip()
+
+            if "Not found in loaded manuals" in text:
+                return "Not found in loaded manuals."
+            return text
         else:
             return "[ERROR] Unexpected response format from server."
 
@@ -287,6 +299,61 @@ def print_help():
     print()
 
 
+server_process = None
+
+def cleanup_server():
+    """Ensure the server subprocess is terminated when the script exits."""
+    global server_process
+    if server_process and server_process.poll() is None:
+        print("\n[INFO] Shutting down KoboldCPP server...")
+        server_process.terminate()
+        server_process.wait()
+
+atexit.register(cleanup_server)
+
+def start_kobold_server():
+    """Start the KoboldCPP server in the background."""
+    global server_process
+    
+    project_root = os.path.join(_SCRIPT_DIR, "..")
+    gguf_files = glob.glob(os.path.join(project_root, "*.gguf"))
+    if not gguf_files:
+        print("[FATAL] No .gguf model found in project directory.")
+        sys.exit(1)
+        
+    model_path = gguf_files[0]
+    server_exe = os.path.join(project_root, "server.exe")
+    
+    if not os.path.exists(server_exe):
+        print("[FATAL] 'server.exe' not found in project directory. Please run setup.bat.")
+        sys.exit(1)
+        
+    threads = max(1, os.cpu_count() or 4)
+    
+    cmd = [
+        server_exe,
+        "--model", model_path,
+        "--port", "5001",
+        "--threads", str(threads),
+        "--quiet"
+    ]
+    
+    print(f"[INFO] Starting KoboldCPP server in the background (Threads: {threads})...")
+    server_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Wait for server to come online
+    print("[...] Waiting for server to initialize (this may take a minute)...")
+    start_time = time.time()
+    while time.time() - start_time < 120:
+        if check_server_status():
+            print("[OK] Server is ready!\n")
+            return
+        time.sleep(2)
+        
+    print("[FATAL] Server failed to start within timeout.")
+    sys.exit(1)
+
+
 def main():
     print_banner()
 
@@ -296,11 +363,10 @@ def main():
         print("[FATAL] Cannot proceed without knowledge base. Exiting.")
         return
 
-    # Check server status
     if not check_server_status():
-        print("[WARN] KoboldCPP server not detected on port 5001!")
-        print("       Start 'server.exe' with your model, then try again.")
-        print("       Continuing anyway - server may come online later.\n")
+        start_kobold_server()
+    else:
+        print("[INFO] Existing KoboldCPP server detected on port 5001.\n")
 
     print("[INFO] Type your question, or '/help' for commands.\n")
 
@@ -317,7 +383,6 @@ def main():
         if not user_input:
             continue
 
-        # Handle commands
         if user_input.lower() == "/quit":
             print("[INFO] Goodbye!")
             break
@@ -340,12 +405,10 @@ def main():
                 print("[INFO] No previous query sources available.\n")
             continue
 
-        # Retrieve relevant chunks
         print("[...] Searching knowledge base...")
         chunks = weighted_keyword_search(user_input, knowledge_base, TOP_K_CHUNKS)
         last_chunks = chunks
 
-        # Pre-filter: Check if query asks about unsupported platforms
         query_lower = user_input.lower()
         unsupported_platforms = [
             "f-16", "f-15", "f-22", "f-35", "f-18", "a-10", "b-52", "b-1", "b-2",
@@ -368,16 +431,16 @@ def main():
             print("           Try rephrasing or using different keywords.\n")
             continue
 
-        # Build context and prompt
         context = format_context(chunks)
         prompt = build_prompt(user_input, context)
 
-        # Query the LLM
         print("[...] Generating response...")
         response = query_kobold(prompt)
 
         print(f"\nAssistant: {response}")
         print(f"           [Sources: {len(chunks)} chunks from knowledge base]\n")
+        
+        log_interaction(user_input, len(chunks), response)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # MANTIS .gitignore
 
-# === Large Binary Files (download via setup.bat) ===
+# === Large Binary Files ===
 server.exe
 *.gguf
 
@@ -9,6 +9,7 @@ data/knowledge_base.json
 
 # === Python ===
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -16,6 +17,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+*.spec
 .eggs/
 
 # === Virtual Environments ===
@@ -35,8 +37,11 @@ ENV/
 Thumbs.db
 desktop.ini
 
-# === Logs ===
+# === Logs & Debug ===
 *.log
+logs/
+scratch/
+debug_*.txt
 
 # === Manuals/Docs ===
 # Manuals/

@@ -8,7 +8,14 @@ Libraries: pymupdf (fitz), json only.
 import json
 import os
 import re
-import fitz  # PyMuPDF
+import sys
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    print("[FATAL] 'pymupdf' library not found.")
+    sys.exit(1)
+
+from security import save_encrypted_json
 
 
 # --- Configuration ---
@@ -16,7 +23,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MANUALS_FOLDER = os.path.join(_SCRIPT_DIR, "..", "Manuals")
 OUTPUT_FILE = os.path.join(_SCRIPT_DIR, "..", "data", "knowledge_base.json")
 
-# Platform tags extracted from filenames
+# Platform tags
 PLATFORM_PATTERNS = {
     "AH-1": re.compile(r"AH[\-_]?1", re.IGNORECASE),
     "RC-12": re.compile(r"RC[\-_]?12", re.IGNORECASE),
@@ -39,7 +46,7 @@ def clean_text(text: str) -> str:
     - Collapse multiple whitespace/newlines into single spaces.
     - Strip leading/trailing whitespace.
     """
-    # Replace multiple whitespace (including newlines, tabs) with single space
+    # Replace multiple whitespace with single space
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -57,23 +64,38 @@ def detect_platform(filename: str) -> str:
 
 def extract_pdf_pages(pdf_path: str) -> list:
     """
-    Extract text from each page of a PDF.
-    Returns list of (page_number, text) tuples.
-    Memory-efficient: processes one page at a time.
+    Extract text using a sliding-window chunking approach.
+    Chunk size: 500 words, Overlap: 100 words.
+    Returns list of (starting_page_number, text) tuples.
     """
-    pages = []
+    chunks = []
     try:
         doc = fitz.open(pdf_path)
+        words_with_pages = []
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
-            text = page.get_text("text")  # Plain text extraction
+            text = page.get_text("text")
             cleaned = clean_text(text)
-            if cleaned:  # Only include non-empty pages
-                pages.append((page_num + 1, cleaned))  # 1-indexed page numbers
+            if cleaned:
+                for word in cleaned.split():
+                    words_with_pages.append((page_num + 1, word))
         doc.close()
+        
+        chunk_size = 150
+        overlap = 50
+        step = chunk_size - overlap
+        
+        for i in range(0, len(words_with_pages), step):
+            window = words_with_pages[i:i + chunk_size]
+            if not window:
+                break
+            start_page = window[0][0]
+            chunk_text = " ".join([w[1] for w in window])
+            chunks.append((start_page, chunk_text))
+            
     except Exception as e:
         print(f"  [ERROR] Failed to process {pdf_path}: {e}")
-    return pages
+    return chunks
 
 
 def ingest_manuals(folder: str) -> list:
@@ -115,12 +137,10 @@ def ingest_manuals(folder: str) -> list:
 
 def save_knowledge_base(kb: list, output_path: str) -> None:
     """
-    Save knowledge base to JSON file.
-    Uses compact format to minimize disk usage.
+    Save encrypted knowledge base to disk.
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(kb, f, ensure_ascii=False, indent=2)
+    save_encrypted_json(kb, output_path)
     print(f"[INFO] Saved {len(kb)} chunks to '{output_path}'")
 
 
@@ -140,7 +160,7 @@ def main():
     # Save to JSON
     save_knowledge_base(knowledge_base, OUTPUT_FILE)
 
-    # Summary statistics
+    # Platforms
     platforms = {}
     for chunk in knowledge_base:
         p = chunk["platform"]
@@ -151,7 +171,6 @@ def main():
     for platform, count in sorted(platforms.items()):
         print(f"  - {platform}: {count} chunks")
 
-    # Memory estimate (rough)
     kb_size = os.path.getsize(OUTPUT_FILE) / 1024
     print(f"\n[INFO] Knowledge base size: {kb_size:.1f} KB")
     print("[DONE] Ingestion complete!")

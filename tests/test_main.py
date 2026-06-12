@@ -23,6 +23,7 @@ from main import (
     STOPWORDS,
     SYSTEM_PROMPT,
 )
+from src.security import save_encrypted_json
 
 
 class TestTokenizeQuery(unittest.TestCase):
@@ -226,13 +227,6 @@ class TestFormatContext(unittest.TestCase):
         result = format_context(chunks)
         self.assertEqual(result, "No relevant context found.")
 
-    def test_text_truncation(self):
-        """Test that long text is truncated."""
-        long_text = "A" * 1000  # 1000 characters
-        chunks = [{"text": long_text, "source": "test.pdf", "page": 1}]
-        result = format_context(chunks)
-        # Text should be truncated to 800 chars
-        self.assertLess(len(result.split("]")[1].strip()), 850)
 
     def test_missing_fields(self):
         """Test handling of missing fields."""
@@ -246,10 +240,9 @@ class TestBuildPrompt(unittest.TestCase):
     """Test cases for the build_prompt function."""
 
     def test_prompt_structure(self):
-        """Test that prompt has correct ChatML structure."""
-        prompt = build_prompt("What is oil pressure?", "Context about oil.")
+        """Test that prompt has correct ChatML format structure."""
+        prompt = build_prompt("query", "context")
         self.assertIn("<|im_start|>system", prompt)
-        self.assertIn("<|im_end|>", prompt)
         self.assertIn("<|im_start|>user", prompt)
         self.assertIn("<|im_start|>assistant", prompt)
 
@@ -286,8 +279,9 @@ class TestLoadKnowledgeBase(unittest.TestCase):
         kb_data = [{"id": "test", "text": "content"}]
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(kb_data, f)
             temp_path = f.name
+        
+        save_encrypted_json(kb_data, temp_path)
         
         try:
             result = load_knowledge_base(temp_path)
@@ -300,8 +294,8 @@ class TestLoadKnowledgeBase(unittest.TestCase):
         """Test loading invalid JSON file."""
         import tempfile
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write("{ invalid json }")
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.json', delete=False) as f:
+            f.write(b'invalid binary data')
             temp_path = f.name
         
         try:

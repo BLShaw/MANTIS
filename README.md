@@ -2,24 +2,38 @@
 
 *Field Manual RAG By Scratch System for Constraints-Based Hardware*
 
-A lightweight, offline Retrieval-Augmented Generation system designed for aviation maintenance manuals. Optimized for No GPU/Legacy/Embedded hardware.
+A lightweight, offline Retrieval-Augmented Generation system designed for aviation maintenance manuals. Optimized for No GPU/Legacy/Embedded hardware (such as IBM ThinkPads/Panasonic Toughbooks).
 
-> ⚠️ **DISCLAIMER:** All sample manuals included in this project are **Distribution Statement A: Approved for public release; distribution is unlimited.** Ensure compliance with applicable regulations when adding additional technical documentation.
+> **DISCLAIMER:** All sample manuals included in this project are **Distribution Statement A: Approved for public release; distribution is unlimited.** Ensure compliance with applicable regulations when adding additional technical documentation.
 
-## Download Required Files
+---
 
-### Option A: Automated
+## Key Features
+
+*   **Ultra-Lightweight RAG**: Runs entirely on the CPU with zero external API dependencies. 
+*   **Qwen 2.5 3B Power**: Utilizes the highly capable `Qwen-2.5-3B-Instruct` model quantized to 4-bit (`Q4_K_M`) to perfectly balance reading comprehension and memory footprint (~2.2 GB RAM).
+*   **Encrypted Knowledge Base**: The JSON vector-less index is fully encrypted at rest using **AES-256-GCM** to protect sensitive technical documentation.
+*   **Sliding Window Chunking**: Manuals are ingested using a highly targeted 150-word sliding window (with 50-word overlap) to ensure the LLM never suffers from "lost in the middle" syndrome.
+*   **Auto-Server Management**: The RAG interface automatically spins up and shuts down the background LLM inference server. No dual-terminal juggling required.
+*   **Audit Logging**: Every interaction, retrieved chunk, and AI response is securely logged for maintenance oversight.
+
+---
+
+## Installation & Setup
+
+### Option A: Automated (Recommended)
 ```powershell
 .\setup.bat
 ```
+*(This will automatically download the 435MB `server.exe` inference engine and the 2.2GB Qwen 2.5 3B model file).*
 
 ### Option B: Manual
 ```powershell
-# KoboldCPP No-AVX build (~410 MB)
-curl -L -o "server.exe" "https://github.com/LostRuins/koboldcpp/releases/download/v1.107/koboldcpp-oldpc.exe"
+# KoboldCPP No-AVX build
+curl -L -o "server.exe" "https://github.com/LostRuins/koboldcpp/releases/download/v1.114.1/koboldcpp-oldpc.exe"
 
-# Qwen 2.5 0.5B Q4_K_M (~463 MB) - OR use any model of your choice
-curl -L -o "qwen2.5-0.5b-instruct-q4_k_m.gguf" "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+# Qwen 2.5 3B Instruct Q4_K_M
+curl -L -o "qwen2.5-3b-instruct-q4_k_m.gguf" "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf?download=true"
 ```
 
 ---
@@ -30,113 +44,85 @@ curl -L -o "qwen2.5-0.5b-instruct-q4_k_m.gguf" "https://huggingface.co/Qwen/Qwen
 # 1. Install requirements
 pip install -r requirements.txt
 
-# 2. Injest PDFs
+# 2. Ingest & Encrypt PDFs (Only needed when adding new manuals)
 python src/ingest.py
 
-# 3. Start LLM server (separate terminal) [Set threads accordingly to the CPU]
-.\server.exe --model qwen2.5-0.5b-instruct-q4_k_m.gguf --port 5001 --threads 4
-
-# 4. Launch CLI chat (in separate terminal)
+# 3. Launch the RAG Chat Interface
 python src/main.py
 ```
+*Note: `main.py` will automatically detect the `.gguf` file, start the background server, wait for it to boot, and present the chat interface.*
 
 ---
 
-## How It Works
+## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Ingestion
         A["PDFs<br/>(Manuals)"] --> B["ingest.py<br/>(PyMuPDF)"]
-        B --> C["JSON KB<br/>(3.5 MB)"]
+        B --> C["Encrypted JSON KB<br/>(AES-256-GCM)"]
     end
     
     subgraph Retrieval
-        D["User Query"] --> E["Keyword Search<br/>(No Embeddings)"]
-        C --> E
-        E --> F["Top-K Chunks"]
+        D["User Query"] --> E["Keyword & Synonym Search<br/>(Slang Dictionary)"]
+        C -- Decrypts on fly --> E
+        E --> F["Top-1 Chunk<br/>(150 words)"]
     end
     
     subgraph Generation
-        F --> G["Build Prompt<br/>(ChatML)"]
-        G --> H["KoboldCPP<br/>(Qwen 0.5B)"]
-        H --> I["Response"]
+        F --> G["Build Prompt<br/>(ChatML format)"]
+        G --> H["KoboldCPP<br/>(Qwen 2.5 3B)"]
+        H --> I["Response & Audit Log"]
     end
 ```
 
 ---
 
-## Sample Knowledge Base
+## Current Knowledge Base
 
-| Platform | Type | Chunks | Source Documents |
-|----------|------|--------|------------------|
-| RC-12    | Reconnaissance Plane | 1,327  | 6 manuals        |
-| AH-1     | Attack Helicopter | 505    | 2 manuals        |
-| C-12     | Utility Plane | 342    | 2 manuals        |
-| UH-1     | Utility Helicopter | 184    | 1 manual         |
-| RD-12    | Reconnaissance Plane | 164    | 1 manual         |
-| OH-58    | Observation Helicopter | 122    | 1 manual         |
-| **Total**| | **2,644** | **12 PDFs**   |
-
----
-
-## Adding New Manuals
-
-1. Drop PDF files into the `Manuals/` folder
-2. (Optional) Add platform pattern to `ingest.py` if needed:
-   ```python
-   PLATFORM_PATTERNS = {
-       # ... existing patterns ...
-       "NEW-PLATFORM": re.compile(r"pattern", re.IGNORECASE),
-   }
-   ```
-3. Re-run: `python ingest.py`
+| Platform | Type | Chunks |
+|----------|------|--------|
+| RC-12    | Reconnaissance Plane | 3,191  |
+| AH-1     | Attack Helicopter | 1,093  |
+| C-12     | Utility Plane | 506    |
+| RD-12    | Reconnaissance Plane | 224    |
+| UH-1     | Utility Helicopter | 210    |
+| OH-58    | Observation Helicopter | 175    |
+| **Total**| | **5,399** |
 
 ---
 
 ## Project Structure
 
-```
+```text
 MANTIS/
 ├── src/
-│   ├── ingest.py           # PDF → JSON indexer
-│   └── main.py             # CLI RAG interface
+│   ├── ingest.py           # PDF parser, chunker, & indexer
+│   ├── main.py             # CLI RAG interface & server manager
+│   ├── security.py         # AES-256-GCM encryption handler
+│   └── audit_logger.py     # Session interaction logger
+├── tests/                  # Unittest suite (70+ tests)
 ├── data/
-│   └── knowledge_base.json # Indexed chunks (generated)
+│   └── knowledge_base.json # Encrypted index (generated)
+├── logs/
+│   └── audit.log           # Interaction history (generated)
 ├── Manuals/                # Source PDFs
-├── server.exe              # KoboldCPP (No-AVX)
-├── *.gguf                  # Quantized LLM
-└── setup.bat               # Auto-downloader
+├── server.exe              # KoboldCPP inference engine
+├── *.gguf                  # Quantized Qwen 2.5 3B model
+└── setup.bat               # Auto-downloader script
 ```
-
----
-
-## Requirements
-
-- Python 3.8+ (3.6+ may work)
-- `pymupdf` — PDF text extraction
-- `requests` — Offline API calls to KoboldCPP
 
 ---
 
 ## Troubleshooting
 
 ### "Cannot connect to KoboldCPP server"
-- Make sure `server.exe` is running in a separate terminal
-- Check that port is not blocked by firewall
-- Run `/status` command to verify connection
-
-### "Knowledge base not found"
-- Run `python ingest.py` first to build the index
-- Ensure `Manuals/` folder contains PDF files
-
-### Slow responses
-- Reduce `max_length` in `main.py` for faster responses
-- Close other applications to free RAM
+- Ensure `server.exe` was successfully downloaded.
+- Ensure the `.gguf` model file is located in the root MANTIS directory.
+- Run `/status` in the CLI to check connection status.
 
 ### Missing platform tags
-- Add new patterns to `PLATFORM_PATTERNS` in `ingest.py`
-- Re-run `python ingest.py` to rebuild the index
+- If querying a new aircraft, add its pattern to `PLATFORM_PATTERNS` in `src/ingest.py` and re-run ingestion.
 
 ---
 

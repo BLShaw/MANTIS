@@ -23,6 +23,7 @@ from ingest import (
     save_knowledge_base,
     PLATFORM_PATTERNS,
 )
+from security import load_encrypted_json
 
 
 class TestCleanText(unittest.TestCase):
@@ -171,9 +172,7 @@ class TestSaveKnowledgeBase(unittest.TestCase):
         
         try:
             save_knowledge_base(kb, temp_path)
-            
-            with open(temp_path, 'r', encoding='utf-8') as f:
-                loaded = json.load(f)
+            loaded = load_encrypted_json(temp_path)
             
             self.assertEqual(len(loaded), 1)
             self.assertEqual(loaded[0]["id"], "doc1_p1")
@@ -190,9 +189,7 @@ class TestSaveKnowledgeBase(unittest.TestCase):
         
         try:
             save_knowledge_base(kb, temp_path)
-            
-            with open(temp_path, 'r', encoding='utf-8') as f:
-                loaded = json.load(f)
+            loaded = load_encrypted_json(temp_path)
             
             self.assertEqual(loaded, [])
         finally:
@@ -209,9 +206,7 @@ class TestSaveKnowledgeBase(unittest.TestCase):
         
         try:
             save_knowledge_base(kb, temp_path)
-            
-            with open(temp_path, 'r', encoding='utf-8') as f:
-                loaded = json.load(f)
+            loaded = load_encrypted_json(temp_path)
             
             self.assertIn("°", loaded[0]["text"])
         finally:
